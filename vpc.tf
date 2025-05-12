@@ -1,74 +1,108 @@
-resource "aws_vpc" "proxy-vpc" {
-  cidr_block = "10.0.0.0/16"
+resource "aws_vpc" "main" {
+  cidr_block       = local.env.vpc_cidr
+  instance_tenancy = "default"
+  tags = {
+    Name = "main"
+  }
+  enable_dns_hostnames = true
+  enable_dns_support   = true
 }
 
-resource "aws_eip" "sh_eip" {
-  depends_on = [aws_internet_gateway.proxy-igw]
-  domain     = "vpc"
+# internet gateway
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
   tags = {
-    Name = "nat eip"
+    Name = "igw"
   }
 }
 
-resource "aws_subnet" "subnet-1" {
-  vpc_id     = aws_vpc.proxy-vpc.id
-  cidr_block = "10.0.1.0/24"
-  availability_zone = "eu-west-2a"
-  map_public_ip_on_launch = true
-  tags = {
-    Name = "proxy-subnet-1"
-  }
-}
-
-resource "aws_subnet" "subnet-2" {
-  vpc_id                  = aws_vpc.proxy-vpc.id
-  cidr_block              = "10.0.2.0/24"
-  availability_zone       = "eu-west-2b"
-  map_public_ip_on_launch = true
-  tags = {
-    Name = "proxy-subnet-2"
-  }
-}
-
-resource "aws_subnet" "subnet-3" {
-  vpc_id     = aws_vpc.proxy-vpc.id
-  cidr_block = "10.0.3.0/24"
-  availability_zone = "eu-west-2c"
-  map_public_ip_on_launch = true
-  tags = {
-    Name = "proxy-subnet-3"
-  }
-}
-
-resource "aws_internet_gateway" "proxy-igw" {
-  vpc_id = aws_vpc.proxy-vpc.id
-  tags = {
-    Name = "proxy-igw"
-  }
-}
-
-resource "aws_route_table" "proxy-rt" {
-  vpc_id = aws_vpc.proxy-vpc.id
+# route table - public
+resource "aws_route_table" "rt-public" {
+  vpc_id = aws_vpc.main.id
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.proxy-igw.id
+    gateway_id = aws_internet_gateway.igw.id
   }
   tags = {
-    Name = "proxy-route-table"
+    Name = "route-table"
   }
 }
 
-resource "aws_route_table_association" "proxy-rta-1" {
-  subnet_id      = aws_subnet.subnet-1.id
-  route_table_id = aws_route_table.proxy-rt.id
+# route table - private
+resource "aws_route_table" "rt-private" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+  tags = {
+    Name = "route-table"
+  }
 }
 
-resource "aws_route_table_association" "proxy-rta-2" {
-  subnet_id      = aws_subnet.subnet-2.id
-  route_table_id = aws_route_table.proxy-rt.id
+# route table - private
+resource "aws_route_table" "rt-efs" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+  tags = {
+    Name = "route-table"
+  }
 }
 
-resource "aws_route_table_association" "proxy-rta-3" {
-  subnet_id      = aws_subnet.subnet-3.id
-  route_table_id = aws_route_table.proxy-rt.id
+# route table associations - public
+# we only have one route table for public and only (at this time) one public route table
+# the route table availability zone is set in all three eu-west-2 zones though)
+resource "aws_route_table" "private" {
+  for_each = local.azs
+  vpc_id   = aws_vpc.main.id
+
+  tags = {
+    Name        = "${local.ws}-private-0${each.key + 1}-routes"
+    Project     = "Secure Cloud"
+    Environment = local.ws
+  }
+}
+
+resource "aws_route_table" "public" {
+  for_each = local.azs
+  vpc_id   = aws_vpc.main.id
+
+  tags = {
+    Name        = "${local.ws}-public-0${each.key + 1}-routes"
+    Project     = "Secure Cloud"
+    Environment = local.ws
+  }
+}
+
+# vpc ssm resources
+resource "aws_vpc_endpoint" "ssm_endpoint" {
+  for_each = local.services
+  vpc_id   = aws_vpc.main.id
+  service_name        = each.value.name
+  vpc_endpoint_type   = "Interface"
+  security_group_ids  = [aws_security_group.ssm_https.id]
+  private_dns_enabled = true
+  ip_address_type     = "ipv4"
+}
+
+resource "aws_security_group" "ssm_https" {
+  name        = "allow_ssm"
+  description = "Allow SSM traffic"
+  vpc_id      = aws_vpc.main.id
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 }
