@@ -1,5 +1,5 @@
 # NOTE
-# As a reminder, for true h/a we need at least two instances running for each server
+# As a reminder, for true h/a we need at least three instances running for each server
 # This then gives us lee way such that if one server drops there's still another serving
 # while the replacement comes up for service.
 #
@@ -12,7 +12,7 @@ resource "aws_launch_template" "ec2_template" {
   instance_initiated_shutdown_behavior = "terminate"
   key_name                             = aws_key_pair.asg-ec2-key.id
   instance_type                        = "t2.micro"
-  vpc_security_group_ids               = [aws_security_group.allow-tls-sg.id]
+  vpc_security_group_ids               = [aws_security_group.allow-tls-sg.id, aws_security_group.efs-sg.id]
 
   dynamic "iam_instance_profile" {
     for_each = var.iam_instance_profile_name != "" ? [var.iam_instance_profile_name] : []
@@ -22,7 +22,7 @@ resource "aws_launch_template" "ec2_template" {
   }
 
   user_data = base64encode(templatefile("ec2.sh", {
-    EFS_ID  = aws_efs_file_system.efs-install.id
+    EFS_ID  = aws_efs_file_system.efs-install.dns_name
     EFS_MOUNT_POINT = "/efs"
     } ))
 
@@ -37,7 +37,7 @@ resource "aws_launch_template" "bastion_template" {
   instance_initiated_shutdown_behavior = "terminate"
   key_name                             = aws_key_pair.asg-ec2-key.id
   instance_type                        = "t2.micro"
-  vpc_security_group_ids               = [aws_security_group.allow-tls-sg.id]
+  vpc_security_group_ids               = [aws_security_group.allow-tls-sg.id, aws_security_group.efs-sg.id]
 
   dynamic "iam_instance_profile" {
     for_each = var.iam_instance_profile_name != "" ? [var.iam_instance_profile_name] : []
@@ -48,7 +48,7 @@ resource "aws_launch_template" "bastion_template" {
 
   # using variable to pass data to the running host, eg: the variable EFS_ID will be used in bastion.sh
   user_data = base64encode(templatefile("bastion.sh", {
-    EFS_ID  = aws_efs_file_system.efs-install.id
+    EFS_ID  = aws_efs_file_system.efs-install.dns_name
     EFS_MOUNT_POINT = "/efs"
   } ))
 
@@ -72,10 +72,6 @@ resource "aws_autoscaling_group" "asg-group-proxy" {
   max_size             = 3
   wait_for_elb_capacity = 1 # slows asg creation down but ensure at least one healthy instance is created
   target_group_arns    = [aws_lb_target_group.asg-lb-tg-80.arn]
-
-  connection {
-
-  }
 
   dynamic "tag"{
     for_each = {

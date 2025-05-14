@@ -16,30 +16,6 @@ resource "aws_internet_gateway" "igw" {
   }
 }
 
-# route table - public
-resource "aws_route_table" "rt-public" {
-  vpc_id = aws_vpc.main.id
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
-  }
-  tags = {
-    Name = "route-table"
-  }
-}
-
-# route table - private
-resource "aws_route_table" "rt-private" {
-  vpc_id = aws_vpc.main.id
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
-  }
-  tags = {
-    Name = "route-table"
-  }
-}
-
 # route table - private
 resource "aws_route_table" "rt-efs" {
   vpc_id = aws_vpc.main.id
@@ -48,61 +24,45 @@ resource "aws_route_table" "rt-efs" {
     gateway_id = aws_internet_gateway.igw.id
   }
   tags = {
-    Name = "route-table"
+    Name = "efs-route-table"
   }
 }
 
-# route table associations - public
-# we only have one route table for public and only (at this time) one public route table
-# the route table availability zone is set in all three eu-west-2 zones though)
-resource "aws_route_table" "private" {
-  for_each = local.azs
-  vpc_id   = aws_vpc.main.id
+# this will let the bastion server in/out for updates - installs etc
+resource "aws_route_table_association" "rta-public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public_route_table.id
+}
 
-  tags = {
-    Name        = "${local.ws}-private-0${each.key + 1}-routes"
-    Project     = "Secure Cloud"
-    Environment = local.ws
+resource "aws_route_table_association" "rta-private" {
+  count = 3
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private_route_table.id
+}
+
+resource "aws_eip" "nat_eip" { # Replace with your VPC ID
+  domain = "vpc"
+}
+
+resource "aws_nat_gateway" "nat_gateway" {
+  allocation_id  = aws_eip.nat_eip.id
+  subnet_id      = aws_subnet.public.id
+}
+
+# 2. Public Subnet Route Table and Route
+resource "aws_route_table" "public_route_table" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id # Assuming you have an IGW
   }
 }
 
-resource "aws_route_table" "public" {
-  for_each = local.azs
-  vpc_id   = aws_vpc.main.id
-
-  tags = {
-    Name        = "${local.ws}-public-0${each.key + 1}-routes"
-    Project     = "Secure Cloud"
-    Environment = local.ws
-  }
-}
-
-# vpc ssm resources
-resource "aws_vpc_endpoint" "ssm_endpoint" {
-  for_each = local.services
-  vpc_id   = aws_vpc.main.id
-  service_name        = each.value.name
-  vpc_endpoint_type   = "Interface"
-  security_group_ids  = [aws_security_group.ssm_https.id]
-  private_dns_enabled = true
-  ip_address_type     = "ipv4"
-}
-
-resource "aws_security_group" "ssm_https" {
-  name        = "allow_ssm"
-  description = "Allow SSM traffic"
-  vpc_id      = aws_vpc.main.id
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.main.cidr_block]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+# 3. Private Subnet Route Table and Route
+resource "aws_route_table" "private_route_table" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat_gateway.id
   }
 }

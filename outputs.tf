@@ -18,3 +18,7 @@ output "lambda_function_name" {
   description = "The name of the Lambda function"
   value       = aws_lambda_function.update_asg_ip_to_dns.function_name
 }
+
+output "eks_cluster_autoscaler_arn" {
+  value = aws_iam_role.eks_cluster_autoscaler.arn
+}

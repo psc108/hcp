@@ -38,6 +38,17 @@ resource "aws_kms_alias" "asg-key-alias" {
   depends_on = [aws_kms_key.asg-kms-key]
 }
 
+resource "aws_kms_key" "eks_encryption" {
+  description         = "KMS key for EKS cluster encryption"
+  policy              = data.aws_iam_policy_document.kms_key_policy.json
+  enable_key_rotation = true
+}
+
+resource "aws_kms_alias" "eks_encryption" {
+  name          = "alias/eks/${var.cluster-name}"
+  target_key_id = aws_kms_key.eks_encryption.id
+}
+
 /*
 resource "aws_acm_certificate" "alb-certificate" {
   private_key = file("private.key")

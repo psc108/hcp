@@ -37,12 +37,6 @@ variable "public_subnet_cidrs" {
   default   = ["10.0.2.0/24", "10.0.3.0/24", "10.0.4.0/24"]
 }
 
-variable "efs_subnet_cidrs" {
-  description = "EFS Subnet CIDR values"
-  type        = string
-  default   = "10.0.5.0/24"
-}
-
 variable "hosted_zone_id" {
   description = "The ID of the Route 53 hosted zone"
   type        = string
@@ -70,4 +64,14 @@ variable "create_resource" {
   type        = bool
   default     = false
   description = "Set to true to create a resource, false to not"
+}
+
+variable "node_group_name" {
+  type = string
+  default = "cso-eks"
+}
+
+variable  "cluster-name" {
+  type  = string
+  default = "cso-eks"
 }
